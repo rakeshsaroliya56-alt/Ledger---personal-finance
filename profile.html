@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ledger — Settings</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@500;600&family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="app">
+  <nav class="rail" id="rail-mount"></nav>
+
+  <main>
+    <div class="page-head">
+      <span class="eyebrow">Account</span>
+      <h1>Settings</h1>
+      <p class="subtle">Update your profile or manage your data.</p>
+      <div class="rule"></div>
+    </div>
+
+    <div class="two-col">
+      <div class="card">
+        <h2>Profile</h2>
+        <form id="profile-form" class="form-grid" style="margin-top:16px;" novalidate>
+          <div>
+            <label for="name">Full name</label>
+            <input type="text" id="name">
+            <div class="field-error" data-error-for="name"></div>
+          </div>
+          <div>
+            <label for="email">Email</label>
+            <input type="email" id="email">
+            <div class="field-error" data-error-for="email"></div>
+          </div>
+          <div>
+            <label for="currency">Base currency</label>
+            <select id="currency">
+              <option value="USD">USD — US Dollar</option>
+              <option value="EUR">EUR — Euro</option>
+              <option value="GBP">GBP — British Pound</option>
+              <option value="INR">INR — Indian Rupee</option>
+              <option value="JPY">JPY — Japanese Yen</option>
+              <option value="CAD">CAD — Canadian Dollar</option>
+              <option value="AUD">AUD — Australian Dollar</option>
+            </select>
+          </div>
+          <button type="submit" class="btn">Save Changes</button>
+        </form>
+      </div>
+
+      <div class="card" style="border-color:var(--expense);">
+        <h2 style="color:var(--expense);">Danger Zone</h2>
+        <p class="subtle" style="margin-bottom:16px;">Permanently delete your account and all transactions. This cannot be undone.</p>
+        <button class="btn-danger" style="padding:10px 18px;" id="delete-btn">Delete Account</button>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script src="app.js"></script>
+<script>
+  const user = requireAuth();
+
+  if (user) {
+    renderRail("profile.html");
+
+    document.getElementById("name").value = user.name;
+    document.getElementById("email").value = user.email;
+    document.getElementById("currency").value = user.currency || "USD";
+
+    document.getElementById("profile-form").addEventListener("submit", (e) => {
+      e.preventDefault();
+      const nameEl = document.getElementById("name");
+      const emailEl = document.getElementById("email");
+      const currencyEl = document.getElementById("currency");
+
+      let valid = true;
+      const nameErr = Validate.required(nameEl.value, "Name");
+      showFieldError(nameEl, nameErr);
+      if (nameErr) valid = false;
+
+      const emailErr = Validate.email(emailEl.value);
+      showFieldError(emailEl, emailErr);
+      if (emailErr) valid = false;
+
+      // check email uniqueness against other accounts
+      const existing = findUserByEmail(emailEl.value);
+      if (existing && existing.id !== user.id) {
+        showFieldError(emailEl, "That email is already used by another account.");
+        valid = false;
+      }
+
+      if (!valid) return;
+
+      updateUser(user.id, {
+        name: nameEl.value.trim(),
+        email: emailEl.value.trim(),
+        currency: currencyEl.value,
+      });
+      toast("Profile updated.");
+    });
+
+    document.getElementById("delete-btn").addEventListener("click", () => {
+      if (!confirm("This will permanently delete your account and all transactions. Continue?")) return;
+      deleteUser(user.id);
+      window.location.href = "login.html";
+    });
+  }
+</script>
+</body>
+</html>

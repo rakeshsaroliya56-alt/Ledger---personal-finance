@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ledger — Add Entry</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@500;600&family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="app">
+  <nav class="rail" id="rail-mount"></nav>
+
+  <main>
+    <div class="page-head">
+      <span class="eyebrow">New record</span>
+      <h1 id="page-title">Add a Transaction</h1>
+      <p class="subtle">Every entry updates your dashboard and reports instantly.</p>
+      <div class="rule"></div>
+    </div>
+
+    <div class="card" style="max-width:520px;">
+      <form id="txn-form" class="form-grid" novalidate>
+        <div>
+          <label>Type</label>
+          <div class="toggle-row">
+            <button type="button" class="type-btn selected income" data-type="income" id="btn-income">Income</button>
+            <button type="button" class="type-btn expense" data-type="expense" id="btn-expense">Expense</button>
+          </div>
+        </div>
+
+        <div>
+          <label for="amount">Amount</label>
+          <input type="number" id="amount" step="0.01" placeholder="0.00">
+          <div class="field-error" data-error-for="amount"></div>
+        </div>
+
+        <div>
+          <label for="category">Category</label>
+          <select id="category"></select>
+          <div class="field-error" data-error-for="category"></div>
+        </div>
+
+        <div>
+          <label for="date">Date</label>
+          <input type="date" id="date">
+          <div class="field-error" data-error-for="date"></div>
+        </div>
+
+        <div>
+          <label for="note">Note (optional)</label>
+          <textarea id="note" rows="3" placeholder="What was this for?"></textarea>
+        </div>
+
+        <div class="btn-row">
+          <button type="submit" class="btn" id="submit-btn">Save Transaction</button>
+          <a href="history.html" class="btn-ghost" style="text-decoration:none;display:inline-block;">Cancel</a>
+        </div>
+      </form>
+    </div>
+  </main>
+</div>
+
+<script src="app.js"></script>
+<script>
+  const user = requireAuth();
+  let currentType = "income";
+  let editId = null;
+
+  if (user) {
+    renderRail("add-transaction.html");
+
+    const params = new URLSearchParams(window.location.search);
+    editId = params.get("edit");
+
+    const categorySelect = document.getElementById("category");
+    function populateCategories(type) {
+      categorySelect.innerHTML = CATEGORIES[type].map(c => `<option value="${c}">${c}</option>`).join("");
+    }
+    populateCategories(currentType);
+
+    const btnIncome = document.getElementById("btn-income");
+    const btnExpense = document.getElementById("btn-expense");
+    function setType(type) {
+      currentType = type;
+      btnIncome.classList.toggle("selected", type === "income");
+      btnExpense.classList.toggle("selected", type === "expense");
+      populateCategories(type);
+    }
+    btnIncome.addEventListener("click", () => setType("income"));
+    btnExpense.addEventListener("click", () => setType("expense"));
+
+    // default date = today
+    document.getElementById("date").valueAsDate = new Date();
+
+    // edit mode: prefill
+    if (editId) {
+      const txn = getTransactionById(editId);
+      if (txn && txn.userId === user.id) {
+        document.getElementById("page-title").textContent = "Edit Transaction";
+        document.getElementById("submit-btn").textContent = "Update Transaction";
+        setType(txn.type);
+        document.getElementById("amount").value = txn.amount;
+        document.getElementById("category").value = txn.category;
+        document.getElementById("date").value = txn.date;
+        document.getElementById("note").value = txn.note || "";
+      }
+    }
+
+    document.getElementById("txn-form").addEventListener("submit", (e) => {
+      e.preventDefault();
+      const amountEl = document.getElementById("amount");
+      const categoryEl = document.getElementById("category");
+      const dateEl = document.getElementById("date");
+      const noteEl = document.getElementById("note");
+
+      let valid = true;
+      const amtErr = Validate.amount(amountEl.value);
+      showFieldError(amountEl, amtErr);
+      if (amtErr) valid = false;
+
+      const catErr = Validate.required(categoryEl.value, "Category");
+      showFieldError(categoryEl, catErr);
+      if (catErr) valid = false;
+
+      const dateErr = Validate.date(dateEl.value);
+      showFieldError(dateEl, dateErr);
+      if (dateErr) valid = false;
+
+      if (!valid) return;
+
+      const payload = {
+        userId: user.id,
+        type: currentType,
+        amount: Number(amountEl.value),
+        category: categoryEl.value,
+        date: dateEl.value,
+        note: noteEl.value.trim(),
+      };
+
+      if (editId) {
+        updateTransaction(editId, payload);
+        toast("Transaction updated.");
+      } else {
+        addTransaction(payload);
+        toast("Transaction added.");
+      }
+
+      setTimeout(() => window.location.href = "history.html", 500);
+    });
+  }
+</script>
+</body>
+</html>

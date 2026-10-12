@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ledger — Sign In</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@500;600&family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="auth-wrap">
+  <div class="auth-card">
+    <span class="eyebrow" id="mode-eyebrow">Welcome back</span>
+    <h1 id="mode-title">Sign in to your ledger</h1>
+    <p class="subtle" id="mode-sub">Track income and expenses, one entry at a time.</p>
+
+    <form id="auth-form" class="form-grid" style="margin-top:22px;" novalidate>
+      <div id="name-field" style="display:none;">
+        <label for="name">Full name</label>
+        <input type="text" id="name" autocomplete="name" placeholder="Jordan Blake">
+        <div class="field-error" data-error-for="name"></div>
+      </div>
+
+      <div>
+        <label for="email">Email</label>
+        <input type="email" id="email" autocomplete="email" placeholder="you@example.com">
+        <div class="field-error" data-error-for="email"></div>
+      </div>
+
+      <div>
+        <label for="password">Password</label>
+        <input type="password" id="password" autocomplete="current-password" placeholder="At least 6 characters">
+        <div class="field-error" data-error-for="password"></div>
+      </div>
+
+      <button type="submit" class="btn" id="submit-btn">Sign In</button>
+    </form>
+
+    <div class="auth-switch">
+      <span id="switch-text">Don't have an account?</span>
+      <a href="#" id="switch-link">Create one</a>
+    </div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+<script>
+  let mode = "login"; // or "signup"
+
+  const els = {
+    eyebrow: document.getElementById("mode-eyebrow"),
+    title: document.getElementById("mode-title"),
+    sub: document.getElementById("mode-sub"),
+    nameField: document.getElementById("name-field"),
+    submitBtn: document.getElementById("submit-btn"),
+    switchText: document.getElementById("switch-text"),
+    switchLink: document.getElementById("switch-link"),
+    form: document.getElementById("auth-form"),
+  };
+
+  function renderMode() {
+    if (mode === "login") {
+      els.eyebrow.textContent = "Welcome back";
+      els.title.textContent = "Sign in to your ledger";
+      els.sub.textContent = "Track income and expenses, one entry at a time.";
+      els.nameField.style.display = "none";
+      els.submitBtn.textContent = "Sign In";
+      els.switchText.textContent = "Don't have an account?";
+      els.switchLink.textContent = "Create one";
+    } else {
+      els.eyebrow.textContent = "Get started";
+      els.title.textContent = "Open a new ledger";
+      els.sub.textContent = "Set up an account to start recording transactions.";
+      els.nameField.style.display = "block";
+      els.submitBtn.textContent = "Create Account";
+      els.switchText.textContent = "Already have an account?";
+      els.switchLink.textContent = "Sign in";
+    }
+  }
+
+  els.switchLink.addEventListener("click", (e) => {
+    e.preventDefault();
+    mode = mode === "login" ? "signup" : "login";
+    renderMode();
+  });
+
+  els.form.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const nameEl = document.getElementById("name");
+    const emailEl = document.getElementById("email");
+    const passEl = document.getElementById("password");
+
+    let valid = true;
+
+    if (mode === "signup") {
+      const nameErr = Validate.required(nameEl.value, "Name");
+      showFieldError(nameEl, nameErr);
+      if (nameErr) valid = false;
+    }
+
+    const emailErr = Validate.email(emailEl.value);
+    showFieldError(emailEl, emailErr);
+    if (emailErr) valid = false;
+
+    const passErr = mode === "signup" ? Validate.password(passEl.value) : Validate.required(passEl.value, "Password");
+    showFieldError(passEl, passErr);
+    if (passErr) valid = false;
+
+    if (!valid) return;
+
+    if (mode === "signup") {
+      const result = signup({ name: nameEl.value.trim(), email: emailEl.value.trim(), password: passEl.value });
+      if (!result.ok) {
+        showFieldError(emailEl, result.error);
+        return;
+      }
+      window.location.href = "index.html";
+    } else {
+      const result = login(emailEl.value.trim(), passEl.value);
+      if (!result.ok) {
+        showFieldError(passEl, result.error);
+        return;
+      }
+      window.location.href = "index.html";
+    }
+  });
+
+  // if already logged in, skip straight to dashboard
+  if (getCurrentUser()) window.location.href = "index.html";
+
+  renderMode();
+</script>
+</body>
+</html>

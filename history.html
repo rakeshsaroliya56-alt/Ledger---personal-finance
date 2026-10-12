@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ledger — History</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@500;600&family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="app">
+  <nav class="rail" id="rail-mount"></nav>
+
+  <main>
+    <div class="page-head">
+      <span class="eyebrow">Full record</span>
+      <h1>Ledger History</h1>
+      <p class="subtle">Search, filter, and manage every transaction you've logged.</p>
+      <div class="rule"></div>
+    </div>
+
+    <div class="filters">
+      <input type="text" id="search" placeholder="Search notes or category…">
+      <select id="filter-type">
+        <option value="all">All types</option>
+        <option value="income">Income</option>
+        <option value="expense">Expense</option>
+      </select>
+      <select id="filter-category">
+        <option value="all">All categories</option>
+      </select>
+      <a href="add-transaction.html" class="btn" style="text-decoration:none;">+ Add Entry</a>
+    </div>
+
+    <div class="card">
+      <div id="table-mount"></div>
+    </div>
+  </main>
+</div>
+
+<script src="app.js"></script>
+<script>
+  const user = requireAuth();
+
+  if (user) {
+    renderRail("history.html");
+
+    let allTxns = getTransactions(user.id);
+
+    // populate category filter
+    const catFilter = document.getElementById("filter-category");
+    const allCats = [...new Set(allTxns.map(t => t.category))].sort();
+    catFilter.innerHTML += allCats.map(c => `<option value="${c}">${c}</option>`).join("");
+
+    const searchEl = document.getElementById("search");
+    const typeEl = document.getElementById("filter-type");
+
+    function render() {
+      const query = searchEl.value.toLowerCase().trim();
+      const typeVal = typeEl.value;
+      const catVal = catFilter.value;
+
+      const filtered = allTxns.filter(t => {
+        if (typeVal !== "all" && t.type !== typeVal) return false;
+        if (catVal !== "all" && t.category !== catVal) return false;
+        if (query && !(t.note || "").toLowerCase().includes(query) && !t.category.toLowerCase().includes(query)) return false;
+        return true;
+      });
+
+      const mount = document.getElementById("table-mount");
+      if (filtered.length === 0) {
+        mount.innerHTML = `<div class="empty-state"><span class="glyph">Ø</span>No matching transactions.</div>`;
+        return;
+      }
+
+      mount.innerHTML = `<table class="ledger-table">
+        <thead><tr>
+          <th>Date</th><th>Type</th><th>Category</th><th>Note</th>
+          <th style="text-align:right;">Amount</th><th></th>
+        </tr></thead>
+        <tbody>
+          ${filtered.map(t => `
+            <tr>
+              <td>${formatDate(t.date)}</td>
+              <td style="text-transform:capitalize;">${t.type}</td>
+              <td><span class="cat-pill">${t.category}</span></td>
+              <td>${t.note ? t.note : "—"}</td>
+              <td style="text-align:right;" class="${t.type === "income" ? "amt-income" : "amt-expense"}">
+                ${t.type === "income" ? "+" : "−"}${formatMoney(t.amount, user.currency)}
+              </td>
+              <td>
+                <div style="display:flex;gap:6px;">
+                  <a class="btn-ghost" style="padding:5px 10px;font-size:0.75rem;text-decoration:none;" href="add-transaction.html?edit=${t.id}">Edit</a>
+                  <button class="btn-danger" onclick="handleDelete('${t.id}')">Delete</button>
+                </div>
+              </td>
+            </tr>`).join("")}
+        </tbody>
+      </table>`;
+    }
+
+    window.handleDelete = function(id) {
+      if (!confirm("Delete this transaction? This can't be undone.")) return;
+      deleteTransaction(id);
+      allTxns = getTransactions(user.id);
+      render();
+      toast("Transaction deleted.");
+    };
+
+    searchEl.addEventListener("input", render);
+    typeEl.addEventListener("change", render);
+    catFilter.addEventListener("change", render);
+
+    render();
+  }
+</script>
+</body>
+</html>

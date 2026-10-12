@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ledger — Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@500;600&family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="app">
+  <nav class="rail" id="rail-mount"></nav>
+
+  <main>
+    <div class="page-head">
+      <span class="eyebrow">Overview</span>
+      <h1 id="greeting">Dashboard</h1>
+      <p class="subtle" id="today"></p>
+      <div class="rule"></div>
+    </div>
+
+    <div class="grid-stats">
+      <div class="stat">
+        <div class="stat-label">Balance</div>
+        <div class="stat-value" id="stat-balance">—</div>
+      </div>
+      <div class="stat income">
+        <div class="stat-label">Total Income</div>
+        <div class="stat-value" id="stat-income">—</div>
+      </div>
+      <div class="stat expense">
+        <div class="stat-label">Total Expenses</div>
+        <div class="stat-value" id="stat-expense">—</div>
+      </div>
+    </div>
+
+    <div class="two-col">
+      <div class="card">
+        <h2>Recent Entries</h2>
+        <p class="subtle" style="margin-bottom:16px;">Your last 6 transactions.</p>
+        <div id="recent-list"></div>
+      </div>
+
+      <div class="card">
+        <h2>By Category</h2>
+        <p class="subtle" style="margin-bottom:16px;">Where expenses are going this month.</p>
+        <div id="category-list"></div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script src="app.js"></script>
+<script>
+  const user = requireAuth();
+  if (user) {
+    renderRail("index.html");
+
+    const now = new Date();
+    document.getElementById("greeting").textContent = `Welcome back, ${user.name.split(" ")[0]}`;
+    document.getElementById("today").textContent = now.toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
+
+    const txns = getTransactions(user.id);
+    const income = txns.filter(t => t.type === "income").reduce((s, t) => s + Number(t.amount), 0);
+    const expense = txns.filter(t => t.type === "expense").reduce((s, t) => s + Number(t.amount), 0);
+    const balance = income - expense;
+
+    document.getElementById("stat-balance").textContent = formatMoney(balance, user.currency);
+    document.getElementById("stat-income").textContent = formatMoney(income, user.currency);
+    document.getElementById("stat-expense").textContent = formatMoney(expense, user.currency);
+
+    // recent entries
+    const recentMount = document.getElementById("recent-list");
+    const recent = txns.slice(0, 6);
+    if (recent.length === 0) {
+      recentMount.innerHTML = `<div class="empty-state"><span class="glyph">Ø</span>No entries yet.<br><a class="btn" style="margin-top:14px;display:inline-block;" href="add-transaction.html">Add your first transaction</a></div>`;
+    } else {
+      recentMount.innerHTML = `<table class="ledger-table">
+        <thead><tr><th>Date</th><th>Category</th><th>Note</th><th style="text-align:right;">Amount</th></tr></thead>
+        <tbody>
+          ${recent.map(t => `
+            <tr>
+              <td>${formatDate(t.date)}</td>
+              <td><span class="cat-pill">${t.category}</span></td>
+              <td>${t.note ? t.note : "—"}</td>
+              <td style="text-align:right;" class="${t.type === "income" ? "amt-income" : "amt-expense"}">
+                ${t.type === "income" ? "+" : "−"}${formatMoney(t.amount, user.currency)}
+              </td>
+            </tr>`).join("")}
+        </tbody>
+      </table>`;
+    }
+
+    // category breakdown (expenses only)
+    const catMount = document.getElementById("category-list");
+    const byCat = {};
+    txns.filter(t => t.type === "expense").forEach(t => {
+      byCat[t.category] = (byCat[t.category] || 0) + Number(t.amount);
+    });
+    const catEntries = Object.entries(byCat).sort((a, b) => b[1] - a[1]);
+    if (catEntries.length === 0) {
+      catMount.innerHTML = `<div class="empty-state"><span class="glyph">Ø</span>No expenses recorded yet.</div>`;
+    } else {
+      const max = catEntries[0][1];
+      catMount.innerHTML = catEntries.map(([cat, amt]) => `
+        <div style="margin-bottom:14px;">
+          <div style="display:flex;justify-content:space-between;font-family:var(--font-mono);font-size:0.82rem;margin-bottom:5px;">
+            <span>${cat}</span><span>${formatMoney(amt, user.currency)}</span>
+          </div>
+          <div style="height:6px;background:var(--rule);border-radius:3px;overflow:hidden;">
+            <div style="height:100%;width:${(amt / max) * 100}%;background:var(--gold);"></div>
+          </div>
+        </div>
+      `).join("");
+    }
+  }
+</script>
+</body>
+</html>

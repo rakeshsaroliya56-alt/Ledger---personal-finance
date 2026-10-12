@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ledger — Reports</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@500;600&family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+</head>
+<body>
+
+<div class="app">
+  <nav class="rail" id="rail-mount"></nav>
+
+  <main>
+    <div class="page-head">
+      <span class="eyebrow">Analysis</span>
+      <h1>Reports</h1>
+      <p class="subtle">Trends and breakdowns drawn from your full transaction history.</p>
+      <div class="rule"></div>
+    </div>
+
+    <div class="card" style="margin-bottom:20px;">
+      <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;">
+        <div>
+          <label for="period-select">View report by</label>
+          <select id="period-select" style="width:160px;">
+            <option value="monthly">Monthly</option>
+            <option value="quarterly">Quarterly</option>
+            <option value="yearly">Yearly</option>
+          </select>
+        </div>
+        <div>
+          <label for="type-select">Show</label>
+          <select id="type-select" style="width:200px;">
+            <option value="both">Income and expenses</option>
+            <option value="expense">Expenses only</option>
+            <option value="income">Income only</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div class="two-col" style="margin-bottom:20px;">
+      <div class="card chart-card">
+        <h2 id="pie-title">Expenses by Category</h2>
+        <p class="subtle" id="pie-sub" style="margin-bottom:10px;"></p>
+        <div class="chart-wrap"><canvas id="pie-chart"></canvas></div>
+      </div>
+      <div class="card chart-card">
+        <h2 id="bar-title">Monthly Income vs. Expense</h2>
+        <p class="subtle" id="bar-sub" style="margin-bottom:10px;"></p>
+        <div class="chart-wrap"><canvas id="bar-chart"></canvas></div>
+        <div id="bar-total" class="subtle" style="font-family:var(--font-mono);margin-top:10px;"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Convert Balance</h2>
+      <p class="subtle" style="margin-bottom:16px;">See your current balance in another currency (live exchange rate).</p>
+      <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;">
+        <div>
+          <label for="target-currency">Currency</label>
+          <select id="target-currency" style="width:160px;">
+            <option value="EUR">EUR — Euro</option>
+            <option value="GBP">GBP — British Pound</option>
+            <option value="INR">INR — Indian Rupee</option>
+            <option value="JPY">JPY — Japanese Yen</option>
+            <option value="CAD">CAD — Canadian Dollar</option>
+            <option value="AUD">AUD — Australian Dollar</option>
+          </select>
+        </div>
+        <button class="btn" id="convert-btn" type="button">Convert</button>
+        <div id="convert-result" class="subtle" style="font-family:var(--font-mono);"></div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script src="app.js"></script>
+<script>
+  const user = requireAuth();
+
+  if (user) {
+    renderRail("reports.html");
+    const txns = getTransactions(user.id);
+
+    // ---- helpers: work out which month / quarter / year a date belongs to ----
+    function parseDate(str) {
+      // read "YYYY-MM-DD" as a local date so a transaction never slips into the wrong month
+      const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(str));
+      return m ? new Date(+m[1], +m[2] - 1, +m[3]) : new Date(str);
+    }
+
+    function keyFor(d, period) {
+      if (period === "monthly") return `${d.getFullYear()}-${d.getMonth()}`;
+      if (period === "quarterly") return `${d.getFullYear()}-Q${Math.floor(d.getMonth() / 3) + 1}`;
+      return `${d.getFullYear()}`;
+    }
+
+    // the time slots shown on the bar chart's x-axis (oldest first)
+    function buildBuckets(period) {
+      const now = new Date();
+      const out = [];
+      if (period === "monthly") {
+        for (let i = 11; i >= 0; i--) {
+          const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+          out.push({ key: keyFor(d, period), label: d.toLocaleDateString("en-US", { month: "short", year: "2-digit" }) });
+        }
+      } else if (period === "quarterly") {
+        const current = now.getFullYear() * 4 + Math.floor(now.getMonth() / 3);
+        for (let i = 7; i >= 0; i--) {
+          const n = current - i;
+          const y = Math.floor(n / 4);
+          const q = (n % 4) + 1;
+          out.push({ key: `${y}-Q${q}`, label: `Q${q} ${y}` });
+        }
+      } else {
+        for (let i = 4; i >= 0; i--) {
+          const y = now.getFullYear() - i;
+          out.push({ key: `${y}`, label: `${y}` });
+        }
+      }
+      return out;
+    }
+
+    // friendly name of the current month / quarter / year
+    function currentLabel(period) {
+      const now = new Date();
+      if (period === "monthly") return now.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+      if (period === "quarterly") return `Q${Math.floor(now.getMonth() / 3) + 1} ${now.getFullYear()}`;
+      return `${now.getFullYear()}`;
+    }
+
+    const PERIOD_INFO = {
+      monthly:   { title: "Monthly",   range: "Last 12 months",   current: "This month" },
+      quarterly: { title: "Quarterly", range: "Last 8 quarters",  current: "This quarter" },
+      yearly:    { title: "Yearly",    range: "Last 5 years",     current: "This year" },
+    };
+    const TYPE_TITLE = { both: "Income vs. Expense", expense: "Expenses", income: "Income" };
+
+    const periodSelect = document.getElementById("period-select");
+    const typeSelect = document.getElementById("type-select");
+    let pieChart = null;
+    let barChart = null;
+
+    // ---- doughnut: expenses by category, for the current month / quarter / year ----
+    function drawPie() {
+      const period = periodSelect.value;
+      const thisKey = keyFor(new Date(), period);
+
+      const byCat = {};
+      txns
+        .filter(t => t.type === "expense" && keyFor(parseDate(t.date), period) === thisKey)
+        .forEach(t => {
+          byCat[t.category] = (byCat[t.category] || 0) + Number(t.amount);
+        });
+      const pieLabels = Object.keys(byCat);
+      const pieData = Object.values(byCat);
+      const palette = ["#C9A227", "#5FB79A", "#C1594F", "#7C93A8", "#B98BD1", "#E0A458", "#4F8FC1", "#8AA05C"];
+
+      document.getElementById("pie-sub").textContent =
+        `${PERIOD_INFO[period].current} (${currentLabel(period)})`;
+
+      if (pieChart) pieChart.destroy();
+      pieChart = new Chart(document.getElementById("pie-chart"), {
+        type: "doughnut",
+        data: {
+          labels: pieLabels.length ? pieLabels : ["No data"],
+          datasets: [{
+            data: pieData.length ? pieData : [1],
+            backgroundColor: pieData.length ? palette : ["#2C4547"],
+            borderColor: "#16292A",
+            borderWidth: 2,
+          }],
+        },
+        options: {
+          plugins: { legend: { position: "bottom", labels: { color: "#EDE7D9", font: { family: "IBM Plex Mono", size: 11 } } } },
+        },
+      });
+    }
+
+    // ---- bar: income / expense for each month, quarter or year ----
+    function drawBar() {
+      const period = periodSelect.value;
+      const type = typeSelect.value;
+      const buckets = buildBuckets(period);
+      const incomeTotals = buckets.map(() => 0);
+      const expenseTotals = buckets.map(() => 0);
+
+      txns.forEach(t => {
+        const idx = buckets.findIndex(b => b.key === keyFor(parseDate(t.date), period));
+        if (idx === -1) return;
+        if (t.type === "income") incomeTotals[idx] += Number(t.amount);
+        else expenseTotals[idx] += Number(t.amount);
+      });
+
+      const datasets = [];
+      if (type !== "expense") datasets.push({ label: "Income", data: incomeTotals, backgroundColor: "#5FB79A" });
+      if (type !== "income") datasets.push({ label: "Expense", data: expenseTotals, backgroundColor: "#C1594F" });
+
+      document.getElementById("bar-title").textContent = `${PERIOD_INFO[period].title} ${TYPE_TITLE[type]}`;
+      document.getElementById("bar-sub").textContent = PERIOD_INFO[period].range;
+
+      const sum = arr => arr.reduce((s, v) => s + v, 0);
+      const parts = [];
+      if (type !== "expense") parts.push(`Income ${formatMoney(sum(incomeTotals), user.currency)}`);
+      if (type !== "income") parts.push(`Expense ${formatMoney(sum(expenseTotals), user.currency)}`);
+      document.getElementById("bar-total").textContent = `Total shown: ${parts.join(" · ")}`;
+
+      if (barChart) barChart.destroy();   // clear the old chart before drawing the new one
+      barChart = new Chart(document.getElementById("bar-chart"), {
+        type: "bar",
+        data: { labels: buckets.map(b => b.label), datasets },
+        options: {
+          scales: {
+            x: { ticks: { color: "#B9C4BC" }, grid: { color: "#2C4547" } },
+            y: { beginAtZero: true, ticks: { color: "#B9C4BC" }, grid: { color: "#2C4547" } },
+          },
+          plugins: { legend: { labels: { color: "#EDE7D9", font: { family: "IBM Plex Mono", size: 11 } } } },
+        },
+      });
+    }
+
+    // redraw both charts whenever a dropdown changes
+    function drawAll() { drawPie(); drawBar(); }
+    periodSelect.addEventListener("change", drawAll);
+    typeSelect.addEventListener("change", drawAll);
+    drawAll();
+
+    // ---- currency conversion (API — CO3) ----
+    document.getElementById("convert-btn").addEventListener("click", async () => {
+      const target = document.getElementById("target-currency").value;
+      const resultEl = document.getElementById("convert-result");
+      const income = txns.filter(t => t.type === "income").reduce((s, t) => s + Number(t.amount), 0);
+      const expense = txns.filter(t => t.type === "expense").reduce((s, t) => s + Number(t.amount), 0);
+      const balance = income - expense;
+
+      resultEl.textContent = "Converting…";
+      try {
+        const res = await fetch(`https://api.exchangerate-api.com/v4/latest/${user.currency}`);
+        if (!res.ok) throw new Error("Rate lookup failed");
+        const data = await res.json();
+        const rate = data.rates[target];
+        if (!rate) throw new Error("Currency not supported");
+        const converted = balance * rate;
+        resultEl.textContent = `${formatMoney(balance, user.currency)} ≈ ${formatMoney(converted, target)}`;
+      } catch (err) {
+        resultEl.textContent = "Couldn't fetch live rates — check your connection and try again.";
+      }
+    });
+  }
+</script>
+</body>
+</html>
